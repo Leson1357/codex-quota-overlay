@@ -29,6 +29,9 @@ function Pump-Until($condition) {
         [Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 25
     } while ([DateTime]::UtcNow -lt $deadline)
+    $errorFile = Join-Path $scratch 'fake-error.txt'
+    if (Test-Path -LiteralPath $errorFile) { Write-Output (Get-Content -LiteralPath $errorFile -Raw) }
+    Write-Output ('Last status: ' + (Field 'tips').GetValue($overlay).GetToolTip($five))
     throw ('Timed out waiting for test protocol state. Mode={0}, Ready={1}, WaitingId={2}, Labels={3} / {4}' -f
         $env:CODEX_QUOTA_TEST_MODE, (Field 'ready').GetValue($overlay), (Field 'waitingId').GetValue($overlay),
         $five.Text, $week.Text)
@@ -132,4 +135,6 @@ try {
     $env:CODEX_QUOTA_TEST_MODE = $originalMode
     $overlay.Dispose()
     if (Test-Path -LiteralPath $fake) { Remove-Item -LiteralPath $fake }
+    $errorFile = Join-Path $scratch 'fake-error.txt'
+    if (Test-Path -LiteralPath $errorFile) { Remove-Item -LiteralPath $errorFile }
 }

@@ -1,11 +1,22 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Web.Script.Serialization;
 
 // Test-only stdio reader: never connects to an account or network.
 public static class FakeCodex
 {
     public static void Main()
+    {
+        try { Run(); }
+        catch (Exception error)
+        {
+            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fake-error.txt"), error.ToString());
+            throw;
+        }
+    }
+
+    private static void Run()
     {
         var json = new JavaScriptSerializer();
         string line;
