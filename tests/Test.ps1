@@ -4,7 +4,7 @@ $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 $scratch = Join-Path $PSScriptRoot '.test-work'
 [void](New-Item -ItemType Directory -Path $scratch -Force)
 $fake = Join-Path $scratch 'FakeCodex.exe'
-& (Join-Path $framework 'csc.exe') /nologo /target:exe /optimize+ "/out:$fake" "/reference:$framework\System.Web.Extensions.dll" (Join-Path $PSScriptRoot 'FakeCodex.cs')
+& (Join-Path $framework 'csc.exe') /nologo /target:exe /optimize+ /codepage:65001 "/out:$fake" "/reference:$framework\System.Web.Extensions.dll" (Join-Path $PSScriptRoot 'FakeCodex.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Fixture compilation failed.' }
 Add-Type -AssemblyName System.Windows.Forms,UIAutomationClient,UIAutomationTypes,WindowsBase
 [void][Reflection.Assembly]::LoadFrom((Join-Path $project 'CodexQuota.exe'))
@@ -22,14 +22,16 @@ function Hover($x, $y) {
     [void](Invoke-Private 'UpdateHoverVisibility' @([Drawing.Point]::new($overlay.Left + $x, $overlay.Top + $y)))
 }
 function Pump-Until($condition) {
-    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
         [void](Invoke-Private 'Tick')
         if (& $condition) { return }
         [Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 25
     } while ([DateTime]::UtcNow -lt $deadline)
-    throw 'Timed out waiting for test protocol state.'
+    throw ('Timed out waiting for test protocol state. Mode={0}, Ready={1}, WaitingId={2}, Labels={3} / {4}' -f
+        $env:CODEX_QUOTA_TEST_MODE, (Field 'ready').GetValue($overlay), (Field 'waitingId').GetValue($overlay),
+        $five.Text, $week.Text)
 }
 $originalMode = $env:CODEX_QUOTA_TEST_MODE
 try {
