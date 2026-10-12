@@ -1,0 +1,33 @@
+name: Windows build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+      - name: Regression tests
+        shell: powershell
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Test.ps1
+      - name: Upload Windows build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: CodexQuota-windows-x64
+          path: |
+            CodexQuota.exe
+            CodexQuota.exe.config
+            enable-codex-autostart.ps1
+            disable-codex-autostart.ps1
+            LICENSE
+            README.md
