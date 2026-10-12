@@ -37,7 +37,10 @@ function Pump-Until($condition) {
         $five.Text, $week.Text)
 }
 $originalMode = $env:CODEX_QUOTA_TEST_MODE
+$originalInputEncoding = [Console]::InputEncoding
 try {
+    # Reproduce the UTF-8/BOM console configuration used by Windows cloud runners.
+    [Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
     $five = (Field 'five').GetValue($overlay)
     $week = (Field 'week').GetValue($overlay)
     $more = (Field 'more').GetValue($overlay)
@@ -133,6 +136,7 @@ try {
     Write-Output 'PASS: hover/questions/buttons; 48 DPI/coordinate/input-height cases; countdowns; protocol; 30-second cadence; failure/recovery; child-process cleanup.'
 } finally {
     $env:CODEX_QUOTA_TEST_MODE = $originalMode
+    [Console]::InputEncoding = $originalInputEncoding
     $overlay.Dispose()
     if (Test-Path -LiteralPath $fake) { Remove-Item -LiteralPath $fake }
     $errorFile = Join-Path $scratch 'fake-error.txt'

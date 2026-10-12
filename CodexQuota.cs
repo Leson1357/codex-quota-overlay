@@ -29,7 +29,7 @@ public sealed class CodexQuota : Form
     private readonly ConcurrentQueue<string> messages = new ConcurrentQueue<string>();
     private readonly JavaScriptSerializer json = new JavaScriptSerializer();
     private readonly Font overlayFont = new Font("Microsoft YaHei UI", 9.5f);
-    private Process server;
+    private WindowsStdio server;
     private AutomationElement foregroundRoot;
     private AutomationElement editor;
     private IntPtr target;
@@ -337,20 +337,10 @@ public sealed class CodexQuota : Form
 
     private void StartServer()
     {
-        server = new Process();
-        server.StartInfo = new ProcessStartInfo(codexPath, "app-server --stdio")
+        server = new WindowsStdio(codexPath, delegate(WindowsStdio sender, string line)
         {
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
-        };
-        server.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
-        {
-            if (Object.ReferenceEquals(sender, server) && e.Data != null) messages.Enqueue(e.Data);
-        };
-        server.ErrorDataReceived += delegate { }; // Drain logs without saving credentials or diagnostics.
-        server.Start();
-        server.BeginOutputReadLine();
-        server.BeginErrorReadLine();
+            if (Object.ReferenceEquals(sender, server)) messages.Enqueue(line);
+        });
         ready = false;
         Send("initialize", new { clientInfo = new { name = "quota_overlay", version = "1.0.0" }, capabilities = new { experimentalApi = true } });
     }
@@ -359,8 +349,12 @@ public sealed class CodexQuota : Form
     {
         waitingId = sequence++;
         requestedAt = DateTime.UtcNow;
-        server.StandardInput.WriteLine(json.Serialize(new { id = waitingId, method = method, @params = parameters }));
-        server.StandardInput.Flush();
+        WriteProtocolLine(json.Serialize(new { id = waitingId, method = method, @params = parameters }));
+    }
+
+    private void WriteProtocolLine(string message)
+    {
+        server.WriteLine(message);
     }
 
     private static IDictionary<string, object> Map(object value) { return value as IDictionary<string, object>; }
@@ -428,17 +422,7 @@ public sealed class CodexQuota : Form
         server = null;
         if (process != null)
         {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    try { process.StandardInput.Close(); }
-                    catch (IOException) { } // A reader may have exited while its pipe was being closed.
-                    if (!process.WaitForExit(250)) process.Kill();
-                }
-            }
-            catch (InvalidOperationException) { }
-            finally { process.Dispose(); }
+            process.Dispose();
         }
         ready = false;
         waitingId = 0;
@@ -466,7 +450,7 @@ public sealed class CodexQuota : Form
                 if (Get(message, "error") != null) throw new InvalidOperationException("额度读取失败，请确认 Codex 已登录 ChatGPT 账户");
                 if (!ready)
                 {
-                    server.StandardInput.WriteLine("{\"method\":\"initialized\"}");
+                    WriteProtocolLine("{\"method\":\"initialized\"}");
                     ready = true;
                     Send("account/rateLimits/read", null);
                 }

@@ -78,6 +78,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Test.ps1
 
 - WinForms 绘制界面；Windows UI Automation 定位输入框与提问卡片。
 - 通过本机 `codex app-server --stdio` 的 `account/rateLimits/read` 读取额度；依赖网络和已有账户登录。
+- 原生管道以无 BOM 的 UTF-8 传输 JSON，不依赖系统控制台编码。
 - 按 `windowDurationMins` 识别 5h 和周窗口，使用服务器提供的 `resetsAt` 计算倒计时。
 - 启用 PerMonitorV2 DPI 支持，并使用目标 Codex 窗口的 DPI 计算位置和间距。
 
@@ -87,6 +88,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Test.ps1
 
 ```text
 CodexQuota.cs                    界面、跟随、避让与额度读取
+WindowsStdio.cs                  无 BOM UTF-8 管道及读取进程生命周期
 CodexQuota.exe.config            每显示器 DPI 支持
 app.manifest                    Windows 兼容声明
 build.ps1                       构建脚本
