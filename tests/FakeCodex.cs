@@ -40,6 +40,13 @@ public static class FakeCodex
                     Console.WriteLine(json.Serialize(new { id, error = new { code = -32603, message = "Test failure" } }));
                     continue;
                 }
+                if (mode == "proxy" &&
+                    (Environment.GetEnvironmentVariable("HTTPS_PROXY") != Environment.GetEnvironmentVariable("CODEX_QUOTA_EXPECTED_PROXY") ||
+                     Environment.GetEnvironmentVariable("CODEX_QUOTA_TEST_TEXT") != "额度测试 ✓"))
+                {
+                    Console.WriteLine(json.Serialize(new { id, error = new { code = -32603, message = "Child proxy or Unicode environment mismatch" } }));
+                    continue;
+                }
                 long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 Console.WriteLine(json.Serialize(new
                 {

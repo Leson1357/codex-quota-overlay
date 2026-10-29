@@ -16,8 +16,8 @@ using System.Windows.Forms;
 
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
 [assembly: AssemblyTitle("Codex Quota Overlay")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 // Windows desktop overlay. No changes to the Codex client or login files.
 public sealed class CodexQuota : Form
@@ -258,7 +258,7 @@ public sealed class CodexQuota : Form
             foreach (AutomationElement element in edits)
             {
                 var current = element.Current;
-                if (!current.IsOffscreen && current.ClassName == "ProseMirror" && current.BoundingRectangle.Width >= 180)
+                if (!current.IsOffscreen && current.ClassName.Split(' ').Contains("ProseMirror") && current.BoundingRectangle.Width >= 180)
                 {
                     editor = element;
                     target = foreground;
@@ -337,12 +337,15 @@ public sealed class CodexQuota : Form
 
     private void StartServer()
     {
+        // Desktop updates remove the versioned CLI directory while the overlay stays open.
+        if (!File.Exists(codexPath)) codexPath = FindCodex();
+        if (codexPath == null) throw new InvalidOperationException("未找到 Codex 命令行程序，将在 30 秒后重试");
         server = new WindowsStdio(codexPath, delegate(WindowsStdio sender, string line)
         {
             if (Object.ReferenceEquals(sender, server)) messages.Enqueue(line);
         });
         ready = false;
-        Send("initialize", new { clientInfo = new { name = "quota_overlay", version = "1.0.0" }, capabilities = new { experimentalApi = true } });
+        Send("initialize", new { clientInfo = new { name = "quota_overlay", version = "1.0.1" }, capabilities = new { experimentalApi = true } });
     }
 
     private void Send(string method, object parameters)
@@ -447,7 +450,8 @@ public sealed class CodexQuota : Form
                 int responseId;
                 if (id == null || !Int32.TryParse(Convert.ToString(id), out responseId) || responseId != waitingId) continue;
                 waitingId = 0;
-                if (Get(message, "error") != null) throw new InvalidOperationException("额度读取失败，请确认 Codex 已登录 ChatGPT 账户");
+                if (Get(message, "error") != null)
+                    throw new InvalidOperationException("额度读取失败：" + Convert.ToString(Get(Map(Get(message, "error")), "message")));
                 if (!ready)
                 {
                     WriteProtocolLine("{\"method\":\"initialized\"}");

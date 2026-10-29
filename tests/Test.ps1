@@ -38,6 +38,11 @@ function Pump-Until($condition) {
 }
 $originalMode = $env:CODEX_QUOTA_TEST_MODE
 $originalInputEncoding = [Console]::InputEncoding
+$originalProxy = [Net.WebRequest]::DefaultWebProxy
+$savedEnvironment = @{}
+foreach ($name in @('HTTPS_PROXY', 'ALL_PROXY', 'CODEX_QUOTA_EXPECTED_PROXY', 'CODEX_QUOTA_TEST_TEXT')) {
+    $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+}
 try {
     # Reproduce the UTF-8/BOM console configuration used by Windows cloud runners.
     [Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
@@ -113,6 +118,7 @@ try {
     Pump-Until { $five.Text.Contains('未更新') }
     Assert ($week.Text.Contains('未更新')) 'Failed reads must mark both labels stale.'
     Assert ((Field 'server').GetValue($overlay) -eq $null) 'Failed reader leaked.'
+    Assert ($tips.GetToolTip($five).Contains('Test failure')) 'The actual server error was lost.'
 
     $env:CODEX_QUOTA_TEST_MODE = 'timeout'
     [void](Invoke-Private 'StartServer')
@@ -128,15 +134,39 @@ try {
     [void](Invoke-Private 'StartServer')
     Pump-Until { $five.Text -eq '5h 剩余：93%' -and (Field 'server').GetValue($overlay) -eq $null }
     Assert (!$week.Text.Contains('未更新')) 'Successful recovery kept stale text.'
+
+    $env:CODEX_QUOTA_TEST_MODE = 'proxy'
+    $env:CODEX_QUOTA_TEST_TEXT = '额度测试 ✓'
+    $proxyCases = @(
+        @{ Proxy = [Net.WebProxy]::new('http://127.0.0.1:18080'); Https = $null; All = $null; Expected = 'http://127.0.0.1:18080/' },
+        @{ Proxy = [Net.WebProxy]::new('http://127.0.0.1:18080'); Https = 'http://127.0.0.1:18081'; All = $null; Expected = 'http://127.0.0.1:18081' },
+        @{ Proxy = [Net.WebProxy]::new('http://127.0.0.1:18080'); Https = $null; All = 'socks5://127.0.0.1:18082'; Expected = $null },
+        @{ Proxy = [Net.WebProxy]::new(); Https = $null; All = $null; Expected = $null },
+        @{ Proxy = $null; Https = $null; All = $null; Expected = $null }
+    )
+    foreach ($case in $proxyCases) {
+        [Net.WebRequest]::DefaultWebProxy = $case.Proxy
+        $env:HTTPS_PROXY = $case.Https
+        $env:ALL_PROXY = $case.All
+        $env:CODEX_QUOTA_EXPECTED_PROXY = $case.Expected
+        [void](Invoke-Private 'StartServer')
+        Pump-Until { $five.Text -eq '5h 剩余：93%' -and (Field 'server').GetValue($overlay) -eq $null }
+        Assert ([Environment]::GetEnvironmentVariable('HTTPS_PROXY') -eq $case.Https) 'Child proxy changed the parent environment.'
+    }
+
     $env:CODEX_QUOTA_TEST_MODE = 'timeout'
     [void](Invoke-Private 'StartServer')
     $readerId = (Field 'server').GetValue($overlay).Id
     $overlay.Dispose()
     Assert (!(Get-Process -Id $readerId -ErrorAction SilentlyContinue)) 'Disposal leaked a child process.'
-    Write-Output 'PASS: hover/questions/buttons; 48 DPI/coordinate/input-height cases; countdowns; protocol; 30-second cadence; failure/recovery; child-process cleanup.'
+    Write-Output 'PASS: hover/questions/buttons; 48 DPI/coordinate/input-height cases; countdowns; protocol; 30-second cadence; failure/recovery; child-process cleanup; system/explicit/bypassed proxy and Unicode environment.'
 } finally {
     $env:CODEX_QUOTA_TEST_MODE = $originalMode
     [Console]::InputEncoding = $originalInputEncoding
+    [Net.WebRequest]::DefaultWebProxy = $originalProxy
+    foreach ($name in $savedEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
+    }
     $overlay.Dispose()
     if (Test-Path -LiteralPath $fake) { Remove-Item -LiteralPath $fake }
     $errorFile = Join-Path $scratch 'fake-error.txt'

@@ -1,7 +1,10 @@
 using System;
+using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -41,6 +44,7 @@ internal sealed class WindowsStdio : IDisposable
     {
         IntPtr childInput = IntPtr.Zero, parentInput = IntPtr.Zero, parentOutput = IntPtr.Zero,
             childOutput = IntPtr.Zero, parentError = IntPtr.Zero, childError = IntPtr.Zero;
+        IntPtr environment = IntPtr.Zero;
         var attributes = new SecurityAttributes { Length = Marshal.SizeOf(typeof(SecurityAttributes)), Inherit = true };
         try
         {
@@ -53,8 +57,9 @@ internal sealed class WindowsStdio : IDisposable
             var startup = new StartupInfo { Size = Marshal.SizeOf(typeof(StartupInfo)), Flags = 0x100,
                 Input = childInput, Output = childOutput, Error = childError };
             ProcessInformation information;
+            environment = ProxyEnvironment();
             Check(CreateProcess(executable, new StringBuilder("\"" + executable + "\" app-server --stdio"),
-                IntPtr.Zero, IntPtr.Zero, true, 0x08000000, IntPtr.Zero, null, ref startup, out information));
+                IntPtr.Zero, IntPtr.Zero, true, 0x08000400, environment, null, ref startup, out information));
             try { process = Process.GetProcessById(information.ProcessId); }
             finally { CloseHandle(information.Thread); CloseHandle(information.Process); }
             input = OwnPipe(ref parentInput, FileAccess.Write);
@@ -64,6 +69,7 @@ internal sealed class WindowsStdio : IDisposable
         catch { Dispose(); throw; }
         finally
         {
+            if (environment != IntPtr.Zero) Marshal.FreeHGlobal(environment);
             foreach (var handle in new[] { childInput, parentInput, parentOutput, childOutput, parentError, childError })
                 if (handle != IntPtr.Zero) CloseHandle(handle);
         }
@@ -73,6 +79,24 @@ internal sealed class WindowsStdio : IDisposable
     }
 
     private static void Check(bool success) { if (!success) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+
+    private static IntPtr ProxyEnvironment()
+    {
+        // Scheduled tasks do not inherit the desktop app's proxy environment.
+        // Keep explicit proxies; otherwise pass Windows' HTTPS proxy to this child only.
+        if (!String.IsNullOrEmpty(Environment.GetEnvironmentVariable("HTTPS_PROXY")) ||
+            !String.IsNullOrEmpty(Environment.GetEnvironmentVariable("ALL_PROXY"))) return IntPtr.Zero;
+        var destination = new Uri("https://chatgpt.com");
+        var proxy = WebRequest.DefaultWebProxy;
+        if (proxy == null || proxy.IsBypassed(destination)) return IntPtr.Zero;
+        var address = proxy.GetProxy(destination);
+        if (address == null || address == destination) return IntPtr.Zero;
+        var entries = Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()
+            .ToDictionary(entry => (string)entry.Key, entry => (string)entry.Value, StringComparer.OrdinalIgnoreCase);
+        entries["HTTPS_PROXY"] = address.AbsoluteUri;
+        return Marshal.StringToHGlobalUni(String.Join("\0", entries.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => entry.Key + "=" + entry.Value)) + "\0\0");
+    }
 
     private static FileStream OwnPipe(ref IntPtr rawHandle, FileAccess access)
     {
